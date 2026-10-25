@@ -1,0 +1,10 @@
+# Données personnelles (relevés, réglages, tarifs, appareils)
+data/
+# Secrets (token Conso API)
+.streamlit/secrets.toml
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
