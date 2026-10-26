@@ -14,7 +14,7 @@ def courbe_demo(jours: int = 14, fin: pd.Timestamp | None = None, graine: int = 
     heure = debut.hour + debut.minute / 60
 
     puissance = 150 + rng.normal(0, 15, len(dates))
-    puissance += np.where((heure >= 22.5) | (heure < 1.5), 1800, 0)          # ballon
+    puissance += np.where((heure >= 1) & (heure < 3.5), 1800, 0)              # ballon (contact HC)
     puissance += np.where((heure >= 7) & (heure < 8), 600, 0)                 # petit-déjeuner
     puissance += np.where((heure >= 19) & (heure < 21), 900, 0)               # cuisine, TV
     lave_linge = (debut.day_of_week.isin([2, 5])) & (heure >= 18) & (heure < 19.5)

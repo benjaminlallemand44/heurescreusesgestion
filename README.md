@@ -9,7 +9,8 @@ Application Streamlit pour suivre et optimiser sa consommation d'électricité a
 - Tableau de bord : consommation par jour en heures pleines / heures creuses, part HC, coût abonnement compris
 - Estimation de la facture du mois en cours et projection annuelle
 - Pic de puissance quotidien comparé à la puissance souscrite
-- Plages HC personnalisables (y compris plusieurs plages, ex. `01:30-07:30; 12:30-14:30`)
+- Plages HC personnalisables, y compris plusieurs plages et des horaires hors demi-heure
+  (ex. `00:56-06:56; 14:56-15:56`) : une demi-heure à cheval est répartie au prorata entre HP et HC
 - Historique daté des tarifs : chaque changement de prix s'applique à partir de sa date, les coûts passés restent justes
 
 **Optimisation**
@@ -40,6 +41,24 @@ Application Streamlit pour suivre et optimiser sa consommation d'électricité a
 
 ⚠️ Le token est un secret : `secrets.toml` est exclu de Git, ne le copiez jamais dans le code.
 
+## 💾 Stockage des données
+
+- **Supabase** (recommandé, indispensable sur Streamlit Cloud) : si `SUPABASE_URL` et `SUPABASE_SECRET_KEY`
+  sont configurés, relevés, tarifs, appareils et réglages sont enregistrés dans le projet Supabase
+  « heures-creuses » (tables `releves`, `tarifs`, `appareils`, `reglages`).
+  Les tables sont protégées : aucune clé publique n'y a accès, seule la clé secrète de l'application.
+- **Fichiers locaux** sinon, dans le dossier `data/` (exclu de Git).
+
+La barre latérale indique où les données sont enregistrées.
+
+## ☁️ Mise en ligne (Streamlit Community Cloud)
+
+1. Sur [share.streamlit.io](https://share.streamlit.io), *Create app* → dépôt `benjaminlallemand44/heurescreusesgestion`,
+   fichier `app.py`.
+2. Dans *Advanced settings → Secrets* (ou après coup : *Settings → Secrets*), collez le contenu de
+   `.streamlit/secrets.toml.example` avec votre clé secrète Supabase et votre token Conso API.
+3. Dans *Settings → Sharing*, limitez l'accès à votre adresse e-mail.
+
 ## 🚀 Installation
 
 ```bash
@@ -52,8 +71,6 @@ streamlit run app.py
 Au premier lancement, allez dans **⚙️ Réglages** pour saisir vos plages d'heures creuses et vérifier les tarifs
 (les valeurs par défaut sont indicatives).
 
-Vos données (relevés, réglages, tarifs, appareils) sont enregistrées localement dans le dossier `data/`,
-exclu de Git.
 
 ## 🧪 Tests
 
@@ -70,6 +87,6 @@ hc/calculs.py     Répartition HP/HC, coûts, talon, pics, simulateur, estimatio
 hc/releves.py     Relevés manuels des index
 hc/enedis.py      Conso API et import CSV
 hc/appareils.py   Catalogue d'appareils, conseils de lancement, rappels .ics
-hc/stockage.py    Sauvegarde locale dans data/
+hc/stockage.py    Sauvegarde : Supabase ou fichiers locaux (data/)
 hc/demo.py        Courbe de charge fictive
 ```

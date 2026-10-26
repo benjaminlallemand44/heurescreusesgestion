@@ -35,12 +35,15 @@ def pourcent(x: float | None) -> str:
     return "–" if x is None or pd.isna(x) else f"{x:.0%}"
 
 
-def lire_token() -> str:
+def lire_secrets() -> dict:
     try:
-        token = st.secrets.get("CONSO_API_TOKEN", "")
-    except FileNotFoundError:
-        token = ""
-    return token or os.environ.get("CONSO_API_TOKEN", "")
+        return dict(st.secrets)
+    except Exception:  # pas de fichier secrets.toml : usage local
+        return {}
+
+
+def lire_token() -> str:
+    return lire_secrets().get("CONSO_API_TOKEN") or os.environ.get("CONSO_API_TOKEN", "")
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner="Récupération des données Enedis…")
@@ -50,8 +53,15 @@ def courbe_api(prm: str, token: str, debut: date, fin: date) -> pd.DataFrame:
 
 # --- Réglages ---------------------------------------------------------------
 
-reglages = stockage.charger_reglages()
-historique = stockage.charger_tarifs()
+store = stockage.choisir(lire_secrets())
+try:
+    reglages = store.charger_reglages()
+    historique = store.charger_tarifs()
+    releves_df = store.charger_releves()
+    mes_appareils = store.charger_appareils()
+except Exception as exc:  # base injoignable ou clé invalide
+    st.error(f"Impossible de lire les données ({store.nom}) : {exc}")
+    st.stop()
 grille = historique.actuelle()
 try:
     plages = parse_plages(reglages["plages_hc"])
@@ -68,6 +78,7 @@ st.caption(
 # --- Source de données ------------------------------------------------------
 
 with st.sidebar:
+    st.caption(f"💾 Données enregistrées dans : {store.nom}")
     st.header("Source des données")
     source = st.radio("Source", [SOURCE_DEMO, SOURCE_RELEVES, SOURCE_CSV, SOURCE_API], label_visibility="collapsed")
 
@@ -98,10 +109,9 @@ with st.sidebar:
             except Exception as exc:  # erreurs réseau ou HTTP renvoyées par l'API
                 st.error(f"Erreur Conso API : {exc}")
 
-releves_df = releves.charger(stockage.FICHIER_RELEVES)
-
 if courbe is not None and not courbe.empty:
-    classe = calculs.classer_hp_hc(calculs.energie_par_intervalle(courbe), plages)
+    energie = calculs.energie_par_intervalle(courbe)
+    classe = calculs.classer_hp_hc(energie, plages)
     bilan = calculs.bilan_journalier(classe, historique)
 elif source == SOURCE_RELEVES:
     classe = None
@@ -176,7 +186,7 @@ with onglets[1]:
                 for e in erreurs:
                     st.error(e)
             else:
-                releves.sauvegarder(releves.ajouter(releves_df, moment, index_hc, index_hp), stockage.FICHIER_RELEVES)
+                store.sauvegarder_releves(releves.ajouter(releves_df, moment, index_hc, index_hp))
                 st.success("Relevé enregistré.")
                 st.rerun()
 
@@ -198,7 +208,7 @@ with onglets[1]:
         with st.expander(f"Tous les relevés ({len(releves_df)})"):
             st.dataframe(releves_df, hide_index=True, width="stretch")
             if st.button("Supprimer le dernier relevé"):
-                releves.sauvegarder(releves_df.iloc[:-1], stockage.FICHIER_RELEVES)
+                store.sauvegarder_releves(releves_df.iloc[:-1])
                 st.rerun()
         if source != SOURCE_RELEVES:
             st.caption("Choisissez « Relevés manuels » dans le menu de gauche pour les utiliser dans le tableau de bord.")
@@ -266,7 +276,7 @@ with onglets[2]:
                     st.error(str(exc))
 
         if classe is not None:
-            resultats = [calculs.cout_offre(classe, o) for o in offres]
+            resultats = [calculs.cout_offre(energie, o) for o in offres]
         else:
             nb_j = len(bilan)
             resultats = calculs.comparer_offres_kwh(bilan["kwh_hp"].sum(), bilan["kwh_hc"].sum(), nb_j, offres)
@@ -290,14 +300,13 @@ with onglets[2]:
 
 with onglets[3]:
     st.subheader("Mes appareils programmables")
-    mes_appareils = stockage.charger_appareils()
     if mes_appareils is None:
         st.info("Quels appareils avez-vous ? Cochez-les : des valeurs typiques sont pré-remplies, "
                 "vous pourrez ensuite les ajuster et ajouter les vôtres.")
         catalogue = appareils.CATALOGUE
         coches = [nom for nom in catalogue["nom"] if st.checkbox(nom, key=f"cat_{nom}")]
         if st.button("Créer ma liste", type="primary", disabled=not coches):
-            stockage.sauvegarder_appareils(catalogue[catalogue["nom"].isin(coches)])
+            store.sauvegarder_appareils(catalogue[catalogue["nom"].isin(coches)])
             st.rerun()
         liste = catalogue.iloc[0:0]
     else:
@@ -313,8 +322,12 @@ with onglets[3]:
         st.caption("Modifiez directement le tableau, ajoutez une ligne en bas ou supprimez-en une, puis enregistrez. "
                    "Le kWh par cycle figure sur l'étiquette énergie ou la notice (souvent indiqué pour 100 cycles).")
         if st.button("Enregistrer mes appareils"):
-            stockage.sauvegarder_appareils(liste)
-            st.success("Appareils enregistrés.")
+            try:
+                store.sauvegarder_appareils(liste)
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                st.success("Appareils enregistrés.")
 
     plan = appareils.plan_appareils(liste, plages, grille.prix_hp, grille.prix_hc)
     if not plan.empty:
@@ -344,6 +357,9 @@ with onglets[4]:
             help="Format HH:MM-HH:MM, séparées par « ; ». Ex. : 01:30-07:30; 12:30-14:30. "
                  "Vos plages exactes figurent sur votre facture ou votre espace Enedis.",
         )
+        total_hc = sum(p.duree_heures() for p in plages)
+        st.caption(f"Plages actuelles : {format_plages(plages)}, soit {total_hc:g} h d'heures creuses par jour"
+                   + ("." if total_hc == 8 else " (en général 8 h : vérifiez sur votre facture ou votre espace Enedis)."))
         c1, c2, c3 = st.columns(3)
         prm = c1.text_input("PRM (n° du compteur)", reglages["prm"])
         kva = c2.selectbox("Puissance souscrite (kVA)", [3, 6, 9, 12, 15, 18],
@@ -355,8 +371,8 @@ with onglets[4]:
             except ValueError as exc:
                 st.error(str(exc))
             else:
-                stockage.sauvegarder_reglages({**reglages, "plages_hc": plages_txt, "prm": prm.strip(),
-                                               "puissance_souscrite_kva": kva, "seuil_pic_w": seuil_pic})
+                store.sauvegarder_reglages({**reglages, "plages_hc": plages_txt, "prm": prm.strip(),
+                                            "puissance_souscrite_kva": kva, "seuil_pic_w": seuil_pic})
                 st.success("Réglages enregistrés.")
                 st.rerun()
 
@@ -378,12 +394,12 @@ with onglets[4]:
     c1, c2 = st.columns(2)
     if c1.button("Enregistrer les tarifs"):
         try:
-            stockage.sauvegarder_tarifs(HistoriqueTarifs.depuis_dataframe(tarifs_df))
+            store.sauvegarder_tarifs(HistoriqueTarifs.depuis_dataframe(tarifs_df))
         except ValueError as exc:
             st.error(str(exc))
         else:
             st.success("Tarifs enregistrés.")
             st.rerun()
     if c2.button("Revenir aux valeurs par défaut"):
-        stockage.sauvegarder_tarifs(HistoriqueTarifs([GRILLE_DEFAUT]))
+        store.sauvegarder_tarifs(HistoriqueTarifs([GRILLE_DEFAUT]))
         st.rerun()

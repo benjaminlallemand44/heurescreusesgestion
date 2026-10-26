@@ -1,7 +1,5 @@
 """Relevés manuels des index HP/HC du compteur Linky."""
 
-from pathlib import Path
-
 import pandas as pd
 
 from hc.calculs import ajouter_cout
@@ -10,18 +8,18 @@ from hc.tarifs import HistoriqueTarifs
 COLONNES = ["date", "index_hc", "index_hp"]
 
 
-def charger(chemin: Path) -> pd.DataFrame:
-    if not chemin.exists():
-        return pd.DataFrame(columns=COLONNES).astype(
-            {"date": "datetime64[ns]", "index_hc": float, "index_hp": float}
-        )
-    df = pd.read_csv(chemin, parse_dates=["date"])
-    return df[COLONNES].sort_values("date").reset_index(drop=True)
+def vide() -> pd.DataFrame:
+    return pd.DataFrame(columns=COLONNES).astype(
+        {"date": "datetime64[ns]", "index_hc": float, "index_hp": float}
+    )
 
 
-def sauvegarder(releves: pd.DataFrame, chemin: Path) -> None:
-    chemin.parent.mkdir(parents=True, exist_ok=True)
-    releves.sort_values("date").to_csv(chemin, index=False)
+def normaliser(df: pd.DataFrame) -> pd.DataFrame:
+    """Colonnes attendues, dates sans fuseau, triées."""
+    df = df[COLONNES].copy()
+    df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None).astype("datetime64[ns]")
+    df[["index_hc", "index_hp"]] = df[["index_hc", "index_hp"]].astype(float)
+    return df.sort_values("date").reset_index(drop=True)
 
 
 def verifier_nouveau(releves: pd.DataFrame, date, index_hc: float, index_hp: float) -> list[str]:

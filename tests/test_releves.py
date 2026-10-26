@@ -1,6 +1,5 @@
 from datetime import date
 
-import pandas as pd
 import pytest
 
 from hc import releves
@@ -10,7 +9,7 @@ HISTO = HistoriqueTarifs([Grille(date(2025, 1, 1), 15.0, 0.30, 0.20, 14.0, 0.25)
 
 
 def exemple():
-    df = releves.charger(__import__("pathlib").Path("/inexistant.csv"))
+    df = releves.vide()
     df = releves.ajouter(df, "2026-10-20 20:00", 12450, 8320)
     return releves.ajouter(df, "2026-10-21 20:00", 12458, 8323)
 
@@ -39,10 +38,3 @@ def test_bilan_journalier_repartit_sur_les_jours():
     assert bilan["kwh_total"].sum() == pytest.approx(11)
     assert bilan["kwh_total"].iloc[0] == pytest.approx(11 * 4 / 24)
     assert bilan["abonnement_jour"].sum() == pytest.approx(15.0 / (365.25 / 12))
-
-
-def test_sauvegarde(tmp_path):
-    chemin = tmp_path / "releves.csv"
-    releves.sauvegarder(exemple(), chemin)
-    relu = releves.charger(chemin)
-    pd.testing.assert_frame_equal(relu, exemple(), check_dtype=False)

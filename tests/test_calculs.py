@@ -85,3 +85,16 @@ def test_estimation_facture():
     assert estim["mois_deja_consomme"] == pytest.approx(25)
     assert estim["mois_projection"] == pytest.approx(31 * 2.5)
     assert estim["annee_projection"] == pytest.approx(365 * 2.5)
+
+
+def test_plages_hors_demi_heure_reparties_au_prorata():
+    plages = parse_plages("00:56-06:56; 14:56-15:56")
+    classe = calculs.classer_hp_hc(calculs.energie_par_intervalle(courbe_constante(1000)), plages)
+    assert classe.loc[classe["periode"] == "HC", "kwh"].sum() == pytest.approx(7)
+    assert classe["kwh"].sum() == pytest.approx(24)
+    # 06:30-07:00 : 26 min en HC, 4 min en HP
+    tranche = classe[classe["intervalle"] == pd.Timestamp("2026-10-01 06:30")]
+    assert tranche.set_index("periode")["kwh"].to_dict() == pytest.approx({"HC": 0.5 * 26 / 30, "HP": 0.5 * 4 / 30})
+    # le profil redonne la puissance moyenne de chaque demi-heure
+    profil = calculs.profil_horaire(classe)
+    assert profil.groupby("heure")["puissance_w"].sum().tolist() == pytest.approx([1000] * 48)
