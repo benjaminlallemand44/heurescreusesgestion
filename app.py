@@ -114,6 +114,9 @@ with st.sidebar:
                 courbe = courbe_api(prm, token, periode[0], periode[1] + timedelta(days=1))
             except Exception as exc:  # erreurs réseau ou HTTP renvoyées par l'API
                 st.error(f"Erreur Conso API : {exc}")
+                st.caption("Causes fréquentes : collecte horaire pas encore activée sur Enedis, "
+                           "token mal copié ou expiré, PRM différent de celui autorisé, "
+                           "ou dates trop récentes (données disponibles à J+1).")
 
 if courbe is not None and not courbe.empty:
     energie = calculs.energie_par_intervalle(courbe)

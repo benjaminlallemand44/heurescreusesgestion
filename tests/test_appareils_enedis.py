@@ -58,8 +58,7 @@ class FausseSession:
         assert headers["Authorization"] == "Bearer secret"
 
         class Rep:
-            def raise_for_status(self):
-                pass
+            ok = True
 
             def json(self):
                 return {"interval_reading": [{"value": "100", "date": f"{params['start']} 00:30:00"}]}
@@ -79,3 +78,26 @@ def test_lire_csv(tmp_path):
     df = enedis.lire_csv(f)
     assert list(df.columns) == ["date", "puissance_w"]
     assert df["puissance_w"].sum() == 2270
+
+
+class SessionErreur:
+    def get(self, url, params, headers, timeout):
+        class Rep:
+            ok = False
+            status_code = 400
+            reason = "Bad Request"
+            text = ""
+
+            def json(self):
+                return {"status": 400, "message": "Aucune donnée pour ce PRM"}
+        return Rep()
+
+
+def test_erreur_conso_api_affiche_le_message():
+    with pytest.raises(enedis.ErreurConsoAPI, match="Aucune donnée pour ce PRM"):
+        enedis.recuperer_courbe("12345678901234", "t", date(2026, 10, 1), date(2026, 10, 2), SessionErreur())
+
+
+@pytest.mark.parametrize("brut", ["abc", " abc\n", '"abc"', "Bearer abc", "  bearer abc "])
+def test_nettoyer_token(brut):
+    assert enedis.nettoyer_token(brut) == "abc"

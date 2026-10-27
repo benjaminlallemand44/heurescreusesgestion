@@ -37,10 +37,32 @@ def decouper_periode(debut: date, fin: date) -> list[tuple[date, date]]:
     return tranches
 
 
+class ErreurConsoAPI(Exception):
+    """Erreur renvoyée par Conso API, avec son message explicatif."""
+
+
+def nettoyer_token(token: str) -> str:
+    """Retire espaces, guillemets et un éventuel « Bearer » collés par erreur."""
+    token = token.strip().strip('"').strip("'").strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    return token
+
+
+def _message_erreur(rep) -> str:
+    try:
+        corps = rep.json()
+    except ValueError:
+        return rep.text[:300] or rep.reason
+    if isinstance(corps, dict):
+        return str(corps.get("message") or corps.get("error") or corps)
+    return str(corps)
+
+
 def recuperer_courbe(prm: str, token: str, debut: date, fin: date, session=None) -> pd.DataFrame:
     """Courbe de charge de `debut` (inclus) à `fin` (exclu)."""
     session = session or requests.Session()
-    entetes = {"Authorization": f"Bearer {token}", "User-Agent": USER_AGENT}
+    entetes = {"Authorization": f"Bearer {nettoyer_token(token)}", "User-Agent": USER_AGENT}
     morceaux = []
     for d, f in decouper_periode(debut, fin):
         rep = session.get(
@@ -49,7 +71,8 @@ def recuperer_courbe(prm: str, token: str, debut: date, fin: date, session=None)
             headers=entetes,
             timeout=30,
         )
-        rep.raise_for_status()
+        if not rep.ok:
+            raise ErreurConsoAPI(f"{rep.status_code} — {_message_erreur(rep)} (du {d:%d/%m} au {f:%d/%m})")
         morceaux.append(parse_courbe(rep.json()))
     if not morceaux:
         return pd.DataFrame(columns=["date", "puissance_w"])
