@@ -116,3 +116,20 @@ def test_tranche_refusee_n_empeche_pas_les_suivantes():
     df, erreurs = enedis.recuperer_courbe("12345678901234", "secret", date(2026, 10, 11), date(2026, 10, 26), session)
     assert len(df) == 2  # tranches du 18 et du 25
     assert len(erreurs) == 1 and "du 11/10 au 18/10" in erreurs[0] and "Aucune donnée" in erreurs[0]
+
+
+def jwt(contenu: dict) -> str:
+    import base64
+    import json
+    corps = base64.urlsafe_b64encode(json.dumps(contenu).encode()).decode().rstrip("=")
+    return f"eyJhbGciOiJIUzI1NiJ9.{corps}.signature"
+
+
+def test_prms_du_token():
+    assert enedis.prms_du_token(jwt({"sub": ["14471635251218"], "exp": 1})) == ["14471635251218"]
+    assert enedis.prms_du_token(jwt({"sub": "12345678901234"})) == ["12345678901234"]
+    assert enedis.prms_du_token("Bearer " + jwt({"sub": ["11111111111111", "22222222222222"]})) == [
+        "11111111111111", "22222222222222"]
+    assert enedis.prms_du_token(jwt({"exp": 12345678901234})) == ["12345678901234"]
+    assert enedis.prms_du_token("pas-un-jwt") == []
+    assert enedis.prms_du_token("a.!!!.b") == []

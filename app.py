@@ -69,6 +69,28 @@ except ValueError as exc:
     st.error(f"{exc}. Corrigez vos plages dans l'onglet Réglages.")
     plages = parse_plages(stockage.REGLAGES_DEFAUT["plages_hc"])
 
+def memoriser_prm(nouveau: str) -> None:
+    """Enregistre le PRM sans formulaire ; une erreur d'écriture n'empêche pas l'affichage."""
+    if nouveau == reglages.get("prm"):
+        return
+    reglages["prm"] = nouveau
+    try:
+        store.sauvegarder_reglages(reglages)
+    except Exception as exc:  # base injoignable : on garde le PRM pour cette session
+        st.toast(f"PRM non enregistré : {exc}")
+
+
+token = lire_token()
+prms_token = enedis.prms_du_token(token) if token else []
+# PRM : celui des réglages s'il fait partie de ceux autorisés par le token,
+# sinon le premier du token, sinon un éventuel secret CONSO_API_PRM
+prm = reglages.get("prm", "")
+if prms_token and prm not in prms_token:
+    prm = prms_token[0]
+prm = prm or lire_secrets().get("CONSO_API_PRM", "")
+if prm:
+    memoriser_prm(prm)
+
 st.title("⚡ Mes heures creuses")
 st.caption(
     f"Plages HC : **{format_plages(plages)}** · Prix HP {grille.prix_hp:.4f} €/kWh · "
@@ -80,7 +102,9 @@ st.caption(
 with st.sidebar:
     st.caption(f"💾 Données enregistrées dans : {store.nom}")
     st.header("Source des données")
-    source = st.radio("Source", [SOURCE_DEMO, SOURCE_RELEVES, SOURCE_CSV, SOURCE_API], label_visibility="collapsed")
+    # Avec un token configuré, on ouvre directement sur les données Enedis
+    source = st.radio("Source", [SOURCE_DEMO, SOURCE_RELEVES, SOURCE_CSV, SOURCE_API],
+                      index=3 if token else 0, label_visibility="collapsed")
 
     courbe = None
     if source == SOURCE_DEMO:
@@ -95,8 +119,13 @@ with st.sidebar:
             except (ValueError, KeyError) as exc:
                 st.error(f"Lecture impossible : {exc}")
     elif source == SOURCE_API:
-        token = lire_token()
-        prm = st.text_input("PRM (14 chiffres)", reglages["prm"])
+        if prm:
+            st.caption(f"PRM : {prm}" + (" (lu dans votre token)" if prm in prms_token else ""))
+        else:
+            saisi = st.text_input("PRM (14 chiffres)", help="Enregistré automatiquement dès qu'il est complet.")
+            if len(saisi.strip()) == 14 and saisi.strip().isdigit():
+                memoriser_prm(saisi.strip())
+                st.rerun()
         hier = date.today() - timedelta(days=1)
         periode = st.date_input("Période", (hier - timedelta(days=6), hier), max_value=hier)
         if not token:
@@ -107,8 +136,8 @@ with st.sidebar:
                 "2. Ajoutez la ligne `CONSO_API_TOKEN = \"votre-token\"` dans les secrets : "
                 "Streamlit Cloud → Settings → Secrets (ou `.streamlit/secrets.toml` en local)."
             )
-        elif len(prm) != 14 or not prm.isdigit():
-            st.warning("Le PRM doit comporter 14 chiffres.")
+        elif not prm:
+            st.info("Saisissez votre PRM : il sera mémorisé pour les prochaines fois.")
         elif isinstance(periode, tuple) and len(periode) == 2:
             try:
                 courbe, erreurs_api = courbe_api(prm, token, periode[0], periode[1] + timedelta(days=1))
@@ -376,7 +405,7 @@ with onglets[4]:
         st.caption(f"Plages actuelles : {format_plages(plages)}, soit {total_hc:g} h d'heures creuses par jour"
                    + ("." if total_hc == 8 else " (en général 8 h : vérifiez sur votre facture ou votre espace Enedis)."))
         c1, c2, c3 = st.columns(3)
-        prm = c1.text_input("PRM (n° du compteur)", reglages["prm"])
+        prm_saisi = c1.text_input("PRM (n° du compteur)", reglages["prm"])
         kva = c2.selectbox("Puissance souscrite (kVA)", [3, 6, 9, 12, 15, 18],
                            index=[3, 6, 9, 12, 15, 18].index(reglages["puissance_souscrite_kva"]))
         seuil_pic = c3.number_input("Seuil « grosse consommation » (W)", 300, 6000, int(reglages["seuil_pic_w"]), step=100)
@@ -386,7 +415,7 @@ with onglets[4]:
             except ValueError as exc:
                 st.error(str(exc))
             else:
-                store.sauvegarder_reglages({**reglages, "plages_hc": plages_txt, "prm": prm.strip(),
+                store.sauvegarder_reglages({**reglages, "plages_hc": plages_txt, "prm": prm_saisi.strip(),
                                             "puissance_souscrite_kva": kva, "seuil_pic_w": seuil_pic})
                 st.success("Réglages enregistrés.")
                 st.rerun()

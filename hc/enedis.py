@@ -5,6 +5,9 @@ est un secret : il se met dans .streamlit/secrets.toml ou dans la variable
 d'environnement CONSO_API_TOKEN, jamais dans le code.
 """
 
+import base64
+import json
+import re
 from datetime import date, timedelta
 
 import pandas as pd
@@ -47,6 +50,39 @@ def nettoyer_token(token: str) -> str:
     if token.lower().startswith("bearer "):
         token = token[7:].strip()
     return token
+
+
+def prms_du_token(token: str) -> list[str]:
+    """PRM autorisés lus dans le token (un JWT dont le contenu liste les PRM).
+
+    Lecture seule, sans vérification de signature : sert uniquement à éviter
+    de demander le PRM. Retourne une liste vide si le token n'est pas lisible.
+    """
+    morceaux = nettoyer_token(token).split(".")
+    if len(morceaux) != 3:
+        return []
+    try:
+        contenu = morceaux[1] + "=" * (-len(morceaux[1]) % 4)
+        donnees = json.loads(base64.urlsafe_b64decode(contenu))
+    except (ValueError, UnicodeDecodeError):
+        return []
+    trouves = []
+
+    def parcourir(valeur):
+        if isinstance(valeur, dict):
+            for v in valeur.values():
+                parcourir(v)
+        elif isinstance(valeur, list):
+            for v in valeur:
+                parcourir(v)
+        elif isinstance(valeur, (str, int)) and re.fullmatch(r"\d{14}", str(valeur)):
+            if str(valeur) not in trouves:
+                trouves.append(str(valeur))
+
+    # « sub » d'abord : c'est là que Conso API range les PRM
+    parcourir(donnees.get("sub") if isinstance(donnees, dict) else None)
+    parcourir(donnees)
+    return trouves
 
 
 def _message_erreur(rep) -> str:
