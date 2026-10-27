@@ -17,7 +17,7 @@ def test_local_aller_retour(tmp_path):
     s = stockage.StockageLocal(tmp_path)
     assert s.charger_releves().empty
     assert s.charger_appareils() is None
-    assert s.charger_reglages()["plages_hc"] == "00:56-06:56; 14:56-15:56"
+    assert s.charger_reglages()["plages_hc"] == "00:56-06:56; 14:56-16:56"
 
     s.sauvegarder_releves(exemple_releves())
     pd.testing.assert_frame_equal(s.charger_releves(), exemple_releves())

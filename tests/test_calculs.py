@@ -88,9 +88,9 @@ def test_estimation_facture():
 
 
 def test_plages_hors_demi_heure_reparties_au_prorata():
-    plages = parse_plages("00:56-06:56; 14:56-15:56")
+    plages = parse_plages("00:56-06:56; 14:56-16:56")
     classe = calculs.classer_hp_hc(calculs.energie_par_intervalle(courbe_constante(1000)), plages)
-    assert classe.loc[classe["periode"] == "HC", "kwh"].sum() == pytest.approx(7)
+    assert classe.loc[classe["periode"] == "HC", "kwh"].sum() == pytest.approx(8)
     assert classe["kwh"].sum() == pytest.approx(24)
     # 06:30-07:00 : 26 min en HC, 4 min en HP
     tranche = classe[classe["intervalle"] == pd.Timestamp("2026-10-01 06:30")]

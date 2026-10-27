@@ -10,7 +10,7 @@ Application Streamlit pour suivre et optimiser sa consommation d'électricité a
 - Estimation de la facture du mois en cours et projection annuelle
 - Pic de puissance quotidien comparé à la puissance souscrite
 - Plages HC personnalisables, y compris plusieurs plages et des horaires hors demi-heure
-  (ex. `00:56-06:56; 14:56-15:56`) : une demi-heure à cheval est répartie au prorata entre HP et HC
+  (ex. `00:56-06:56; 14:56-16:56`) : une demi-heure à cheval est répartie au prorata entre HP et HC
 - Historique daté des tarifs : chaque changement de prix s'applique à partir de sa date, les coûts passés restent justes
 
 **Optimisation**

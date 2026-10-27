@@ -18,7 +18,7 @@ from hc.tarifs import COLONNES_GRILLE, GRILLE_DEFAUT, HistoriqueTarifs
 DOSSIER = Path(__file__).resolve().parent.parent / "data"
 
 REGLAGES_DEFAUT = {
-    "plages_hc": "00:56-06:56; 14:56-15:56",
+    "plages_hc": "00:56-06:56; 14:56-16:56",
     "prm": "",
     "puissance_souscrite_kva": 6,
     "seuil_pic_w": 1500,
