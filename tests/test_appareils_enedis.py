@@ -133,3 +133,13 @@ def test_prms_du_token():
     assert enedis.prms_du_token(jwt({"exp": 12345678901234})) == ["12345678901234"]
     assert enedis.prms_du_token("pas-un-jwt") == []
     assert enedis.prms_du_token("a.!!!.b") == []
+
+
+def test_message_erreur_inclut_les_details_enedis():
+    class Rep:
+        def json(self):
+            return {"status": 400, "message": "The Enedis API returned an error",
+                    "enedis": {"error": "ADAM-ERR0123", "error_description": "no measure"}}
+    message = enedis._message_erreur(Rep())
+    assert message.startswith("The Enedis API returned an error")
+    assert "ADAM-ERR0123" in message and "no measure" in message

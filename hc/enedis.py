@@ -91,7 +91,12 @@ def _message_erreur(rep) -> str:
     except ValueError:
         return rep.text[:300] or rep.reason
     if isinstance(corps, dict):
-        return str(corps.get("message") or corps.get("error") or corps)
+        message = str(corps.get("message") or corps.get("error") or "")
+        # Détails éventuels transmis par Enedis (code d'erreur, description…)
+        details = {k: v for k, v in corps.items() if k not in ("message", "status") and v not in (None, "", [], {})}
+        if details:
+            message += " " + json.dumps(details, ensure_ascii=False)
+        return message.strip() or str(corps)
     return str(corps)
 
 
