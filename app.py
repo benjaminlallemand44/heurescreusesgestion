@@ -100,7 +100,13 @@ with st.sidebar:
         hier = date.today() - timedelta(days=1)
         periode = st.date_input("Période", (hier - timedelta(days=14), hier), max_value=hier)
         if not token:
-            st.warning("Token absent : voir le README (fichier .streamlit/secrets.toml).")
+            st.warning(
+                "Token Conso API absent.\n\n"
+                "1. Sur [conso.boris.sh](https://conso.boris.sh), donnez votre accord sur Enedis "
+                "et copiez le token obtenu.\n"
+                "2. Ajoutez la ligne `CONSO_API_TOKEN = \"votre-token\"` dans les secrets : "
+                "Streamlit Cloud → Settings → Secrets (ou `.streamlit/secrets.toml` en local)."
+            )
         elif len(prm) != 14 or not prm.isdigit():
             st.warning("Le PRM doit comporter 14 chiffres.")
         elif isinstance(periode, tuple) and len(periode) == 2:
