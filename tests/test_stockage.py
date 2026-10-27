@@ -1,10 +1,11 @@
 import json
-from datetime import date
+from datetime import date, datetime
 
 import pandas as pd
 import pytest
 
 from hc import appareils, releves, stockage
+from hc import journal as jr
 from hc.tarifs import GRILLE_DEFAUT, Grille, HistoriqueTarifs
 
 
@@ -24,6 +25,7 @@ def test_local_aller_retour(tmp_path):
 
     s.sauvegarder_appareils(appareils.CATALOGUE.head(2))
     assert list(s.charger_appareils()["nom"]) == list(appareils.CATALOGUE["nom"].head(2))
+    verifier_journal(s)
 
     h = HistoriqueTarifs([GRILLE_DEFAUT, Grille(date(2026, 2, 1), 16, 0.28, 0.21, 15.5, 0.26)])
     s.sauvegarder_tarifs(h)
@@ -62,13 +64,22 @@ class FausseAPI:
         if methode == "GET":
             rep.content = b"x"
             rep.json = lambda: list(lignes)
-        elif methode == "POST":
+        elif methode == "POST" and "on_conflict" in (params or {}):
             cle = params["on_conflict"]
             for nouvelle in json:
                 lignes[:] = [l for l in lignes if l[cle] != nouvelle[cle]] + [nouvelle]
+        elif methode == "POST" and "on_conflict" not in (params or {}):
+            lignes.extend(json)
+        elif methode == "PATCH":
+            id_ = params["id"].removeprefix("eq.")
+            for l in lignes:
+                if l["id"] == id_:
+                    l.update(json)
         elif methode == "DELETE":
             (cle, filtre), = params.items()
-            if filtre == "not.is.null":
+            if filtre.startswith("eq."):
+                lignes[:] = [l for l in lignes if str(l[cle]) != filtre[3:]]
+            elif filtre == "not.is.null":
                 lignes.clear()
             else:
                 gardees = {v.strip('"') for v in filtre.removeprefix("not.in.(").removesuffix(")").split('","')}
@@ -101,6 +112,9 @@ def test_supabase_aller_retour():
     s.sauvegarder_reglages({"prm": "1"})
     assert s.charger_reglages()["prm"] == "1"
 
+    verifier_journal(s)
+    assert api.tables["utilisations"] == []
+
     entetes = api.requetes[0][3]
     assert entetes["apikey"] == "sb_secret_abc" and "Authorization" not in entetes
 
@@ -115,3 +129,20 @@ def test_choisir(monkeypatch):
     assert isinstance(stockage.choisir({}), stockage.StockageLocal)
     s = stockage.choisir({"SUPABASE_URL": "https://x.supabase.co", "SUPABASE_SECRET_KEY": "k"})
     assert isinstance(s, stockage.StockageSupabase)
+
+
+def verifier_journal(s):
+    """Ajout, arrêt et suppression d'utilisations, identiques pour les deux stockages."""
+    assert s.charger_journal().empty
+    u = jr.nouvelle("Plaques de cuisson", datetime(2026, 10, 20, 19, 0))
+    s.ajouter_utilisation(u)
+    s.ajouter_utilisation(jr.nouvelle("Lave-linge", datetime(2026, 10, 20, 22, 0), datetime(2026, 10, 21, 0, 0)))
+    j = s.charger_journal()
+    assert len(j) == 2 and pd.isna(j.iloc[0]["fin"])
+    s.modifier_utilisation(u["id"], fin=datetime(2026, 10, 20, 19, 45))
+    j = s.charger_journal()
+    assert j.set_index("id").loc[u["id"], "fin"] == pd.Timestamp("2026-10-20 19:45")
+    s.supprimer_utilisation(u["id"])
+    j = s.charger_journal()
+    assert list(j["appareil"]) == ["Lave-linge"]
+    s.supprimer_utilisation(j.iloc[0]["id"])

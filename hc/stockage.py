@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from hc import appareils, releves
+from hc import appareils, journal, releves
 from hc.tarifs import COLONNES_GRILLE, GRILLE_DEFAUT, HistoriqueTarifs
 
 DOSSIER = Path(__file__).resolve().parent.parent / "data"
@@ -27,12 +27,23 @@ REGLAGES_DEFAUT = {
 
 def nettoyer_appareils(df: pd.DataFrame) -> pd.DataFrame:
     """Retire les lignes vides du tableau et refuse les noms en double."""
-    df = df[appareils.COLONNES].dropna(subset=["nom"])
+    df = df.dropna(subset=["nom"])
     df = df[df["nom"].astype(str).str.strip() != ""].assign(nom=lambda d: d["nom"].astype(str).str.strip())
     doublons = df["nom"][df["nom"].duplicated()].unique()
     if len(doublons):
         raise ValueError(f"Appareil en double : {', '.join(doublons)}")
-    return df.fillna(0).reset_index(drop=True)
+    return appareils.normaliser(df)
+
+
+def _journal_vers_lignes(df: pd.DataFrame) -> list[dict]:
+    """Utilisations au format JSON (dates ISO, fin vide → null)."""
+    df = journal.normaliser(df)
+    lignes = []
+    for r in df.to_dict("records"):
+        for col in ("debut", "fin"):
+            r[col] = None if pd.isna(r[col]) else pd.Timestamp(r[col]).strftime("%Y-%m-%dT%H:%M:%S")
+        lignes.append(r)
+    return lignes
 
 
 class StockageLocal:
@@ -67,7 +78,7 @@ class StockageLocal:
     def charger_appareils(self) -> pd.DataFrame | None:
         """Liste enregistrée, ou None si l'utilisateur ne l'a pas encore créée."""
         f = self.dossier / "appareils.csv"
-        return pd.read_csv(f)[appareils.COLONNES] if f.exists() else None
+        return appareils.normaliser(pd.read_csv(f)) if f.exists() else None
 
     def sauvegarder_appareils(self, df: pd.DataFrame) -> None:
         nettoyer_appareils(df).to_csv(self._fichier("appareils.csv"), index=False)
@@ -80,6 +91,29 @@ class StockageLocal:
 
     def sauvegarder_releves(self, df: pd.DataFrame) -> None:
         releves.normaliser(df).to_csv(self._fichier("releves.csv"), index=False)
+
+    def charger_journal(self) -> pd.DataFrame:
+        f = self.dossier / "utilisations.csv"
+        if not f.exists():
+            return journal.vide()
+        return journal.normaliser(pd.read_csv(f, dtype={"id": str, "note": str}))
+
+    def _ecrire_journal(self, df: pd.DataFrame) -> None:
+        journal.normaliser(df).to_csv(self._fichier("utilisations.csv"), index=False)
+
+    def ajouter_utilisation(self, utilisation: dict) -> None:
+        df = self.charger_journal()
+        self._ecrire_journal(pd.concat([df, pd.DataFrame([utilisation])], ignore_index=True))
+
+    def modifier_utilisation(self, id_: str, **champs) -> None:
+        df = self.charger_journal()
+        for k, v in champs.items():
+            df.loc[df["id"] == id_, k] = v
+        self._ecrire_journal(df)
+
+    def supprimer_utilisation(self, id_: str) -> None:
+        df = self.charger_journal()
+        self._ecrire_journal(df[df["id"] != id_])
 
 
 def _liste_in(valeurs) -> str:
@@ -155,7 +189,7 @@ class StockageSupabase:
 
     def charger_appareils(self) -> pd.DataFrame | None:
         lignes = self._lire("appareils", "nom")
-        return pd.DataFrame(lignes)[appareils.COLONNES] if lignes else None
+        return appareils.normaliser(pd.DataFrame(lignes)) if lignes else None
 
     def sauvegarder_appareils(self, df: pd.DataFrame) -> None:
         self._remplacer("appareils", "nom", nettoyer_appareils(df).to_dict("records"))
@@ -172,6 +206,22 @@ class StockageSupabase:
         df = releves.normaliser(df)
         df["date"] = df["date"].dt.strftime("%Y-%m-%dT%H:%M:%S")
         self._remplacer("releves", "date", df.to_dict("records"))
+
+    def charger_journal(self) -> pd.DataFrame:
+        lignes = self._lire("utilisations", "debut")
+        return journal.normaliser(pd.DataFrame(lignes)) if lignes else journal.vide()
+
+    def ajouter_utilisation(self, utilisation: dict) -> None:
+        self._requete("POST", "utilisations", json_=_journal_vers_lignes(pd.DataFrame([utilisation])),
+                      prefer="return=minimal")
+
+    def modifier_utilisation(self, id_: str, **champs) -> None:
+        valeurs = {k: (None if pd.isna(v) else pd.Timestamp(v).strftime("%Y-%m-%dT%H:%M:%S"))
+                   if k in ("debut", "fin") else v for k, v in champs.items()}
+        self._requete("PATCH", "utilisations", params={"id": f"eq.{id_}"}, json_=valeurs, prefer="return=minimal")
+
+    def supprimer_utilisation(self, id_: str) -> None:
+        self._requete("DELETE", "utilisations", params={"id": f"eq.{id_}"}, prefer="return=minimal")
 
 
 def choisir(secrets: dict | None = None):

@@ -10,12 +10,29 @@ from hc.tarifs import parse_plages
 def test_plan_appareils():
     plages = parse_plages("01:00-07:00; 12:00-14:00")
     plan = appareils.plan_appareils(appareils.CATALOGUE, plages, 0.30, 0.20)
-    assert len(plan) == len(appareils.CATALOGUE)
-    assert plan["Conseil"].iloc[0].startswith("Lancer à 01:00")
-    lave_linge = appareils.CATALOGUE.iloc[0]
-    assert plan["Gain par an (€)"].iloc[0] == pytest.approx(
-        lave_linge["kwh_cycle"] * 0.10 * lave_linge["cycles_semaine"] * 52
-    )
+    deplacables = appareils.CATALOGUE[appareils.CATALOGUE["deplacable"]]
+    assert list(plan["Appareil"]) == list(deplacables["nom"])
+    lave_linge = plan[plan["Appareil"] == "Lave-linge"].iloc[0]
+    assert lave_linge["Conseil"].startswith("Lancer à 01:00")
+    assert lave_linge["Gain par an (€)"] == pytest.approx(0.9 * 0.10 * 3 * 52)
+    # sèche-serviettes : 6 mois par an
+    seche = plan[plan["Appareil"] == "Sèche-serviettes"].iloc[0]
+    assert seche["Gain par an (€)"] == pytest.approx(0.75 * 1.5 * 0.10 * 7 * 52 / 2)
+
+
+def test_kwh_annuel_selon_usage():
+    cat = appareils.bilan_inventaire(appareils.CATALOGUE).set_index("nom")
+    assert cat.loc["Réfrigérateur-congélateur", "kwh_an"] == pytest.approx(35 * 8.76)
+    assert cat.loc["Lave-linge", "kwh_utilisation"] == pytest.approx(0.9)
+    assert cat.loc["Radiateur séjour", "kwh_an"] == pytest.approx(1.5 * 5 * 7 * 52 / 2)
+
+
+def test_normaliser_ancienne_liste():
+    ancienne = pd.DataFrame([{"nom": "Lave-linge (40 °C)", "kwh_cycle": 0.9, "duree_h": 2.0, "cycles_semaine": 3}])
+    df = appareils.normaliser(ancienne)
+    assert list(df.columns) == appareils.COLONNES
+    ligne = df.iloc[0]
+    assert ligne["usage"] == "cycle" and ligne["deplacable"] and ligne["utilisations_semaine"] == 3
 
 
 def test_cycle_trop_long():

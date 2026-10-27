@@ -1,4 +1,4 @@
-"""Planification des appareils en heures creuses et rappels calendrier."""
+"""Inventaire des appareils, estimations de consommation et rappels calendrier."""
 
 from datetime import date, datetime, timedelta
 
@@ -6,18 +6,108 @@ import pandas as pd
 
 from hc.tarifs import Plage
 
-COLONNES = ["nom", "kwh_cycle", "duree_h", "cycles_semaine"]
+COLONNES = [
+    "nom", "categorie", "usage", "puissance_w", "duree_h", "kwh_cycle",
+    "utilisations_semaine", "mois_par_an", "quantite", "deplacable",
+]
 
-# Valeurs typiques, proposées au premier lancement puis modifiables
+CATEGORIES = [
+    "Chauffage", "Eau chaude", "Cuisson", "Froid", "Lavage",
+    "Éclairage", "Multimédia", "Petit électroménager", "Autre",
+]
+
+# Comment l'appareil consomme :
+# - cycle : un programme à consommation connue (lave-linge) → kwh_cycle
+# - duree : puissance × durée d'utilisation (plaques, radiateur, éclairage)
+# - permanent : branché en continu, puissance moyenne (réfrigérateur, box)
+USAGES = {"cycle": "Cycle / programme", "duree": "Durée d'utilisation", "permanent": "Permanent"}
+
+DEFAUTS = {"categorie": "Autre", "usage": "duree", "puissance_w": 0.0, "duree_h": 1.0, "kwh_cycle": 0.0,
+           "utilisations_semaine": 0.0, "mois_par_an": 12.0, "quantite": 1, "deplacable": False}
+
+
+def _a(nom, categorie, usage, puissance_w=0.0, duree_h=0.0, kwh_cycle=0.0, utilisations_semaine=0.0,
+       mois_par_an=12.0, deplacable=False):
+    return {"nom": nom, "categorie": categorie, "usage": usage, "puissance_w": puissance_w, "duree_h": duree_h,
+            "kwh_cycle": kwh_cycle, "utilisations_semaine": utilisations_semaine, "mois_par_an": mois_par_an,
+            "quantite": 1, "deplacable": deplacable}
+
+
+# Valeurs typiques, proposées au premier lancement puis modifiables.
+# Chauffage : durée = équivalent pleine puissance par jour (le thermostat coupe souvent).
 CATALOGUE = pd.DataFrame([
-    {"nom": "Lave-linge (40 °C)", "kwh_cycle": 0.9, "duree_h": 2.0, "cycles_semaine": 3},
-    {"nom": "Lave-linge (60 °C)", "kwh_cycle": 1.4, "duree_h": 2.5, "cycles_semaine": 1},
-    {"nom": "Lave-vaisselle (éco)", "kwh_cycle": 0.9, "duree_h": 3.5, "cycles_semaine": 4},
-    {"nom": "Sèche-linge (pompe à chaleur)", "kwh_cycle": 1.5, "duree_h": 2.5, "cycles_semaine": 2},
-    {"nom": "Sèche-linge (condensation)", "kwh_cycle": 3.5, "duree_h": 2.0, "cycles_semaine": 2},
-    {"nom": "Voiture électrique (recharge)", "kwh_cycle": 15.0, "duree_h": 5.0, "cycles_semaine": 2},
-    {"nom": "Vélo / trottinette électrique", "kwh_cycle": 0.5, "duree_h": 4.0, "cycles_semaine": 2},
+    _a("Radiateur séjour", "Chauffage", "duree", 1500, 5, utilisations_semaine=7, mois_par_an=6),
+    _a("Radiateur chambre", "Chauffage", "duree", 1000, 4, utilisations_semaine=7, mois_par_an=6),
+    _a("Sèche-serviettes", "Chauffage", "duree", 750, 1.5, utilisations_semaine=7, mois_par_an=6, deplacable=True),
+    _a("Ballon d'eau chaude", "Eau chaude", "duree", 2200, 2.5, utilisations_semaine=7, deplacable=True),
+    _a("Plaques de cuisson", "Cuisson", "duree", 2000, 0.75, utilisations_semaine=7),
+    _a("Four", "Cuisson", "duree", 2000, 0.75, utilisations_semaine=2),
+    _a("Micro-ondes", "Cuisson", "duree", 1000, 0.15, utilisations_semaine=7),
+    _a("Bouilloire", "Cuisson", "duree", 2000, 0.05, utilisations_semaine=7),
+    _a("Réfrigérateur-congélateur", "Froid", "permanent", 35),
+    _a("Lave-linge", "Lavage", "cycle", 450, 2.0, 0.9, 3, deplacable=True),
+    _a("Lave-vaisselle", "Lavage", "cycle", 260, 3.5, 0.9, 4, deplacable=True),
+    _a("Sèche-linge", "Lavage", "cycle", 600, 2.5, 1.5, 2, deplacable=True),
+    _a("Éclairage", "Éclairage", "duree", 80, 5, utilisations_semaine=7),
+    _a("Box internet", "Multimédia", "permanent", 12),
+    _a("Télévision", "Multimédia", "duree", 80, 3, utilisations_semaine=7),
+    _a("Ordinateur", "Multimédia", "duree", 60, 4, utilisations_semaine=5),
+    _a("Veilles diverses", "Multimédia", "permanent", 15),
+    _a("Cafetière", "Petit électroménager", "duree", 1000, 0.1, utilisations_semaine=7),
+    _a("Aspirateur", "Petit électroménager", "duree", 800, 0.5, utilisations_semaine=1),
+    _a("Fer à repasser", "Petit électroménager", "duree", 2000, 0.5, utilisations_semaine=1),
 ], columns=COLONNES)
+
+
+def normaliser(df: pd.DataFrame) -> pd.DataFrame:
+    """Complète les colonnes manquantes (anciennes listes) avec les valeurs par défaut."""
+    df = df.copy()
+    if "cycles_semaine" in df and "utilisations_semaine" not in df:
+        df = df.rename(columns={"cycles_semaine": "utilisations_semaine"})
+        df["usage"] = df.get("usage", "cycle")
+        df["deplacable"] = df.get("deplacable", True)
+        df["categorie"] = df.get("categorie", "Lavage")
+    for col in COLONNES:
+        if col not in df:
+            df[col] = DEFAUTS.get(col)
+        elif col in DEFAUTS:
+            df[col] = df[col].where(df[col].notna(), DEFAUTS[col])
+    df["deplacable"] = df["deplacable"].astype(bool)
+    df["quantite"] = df["quantite"].astype(int)
+    for col in ("puissance_w", "duree_h", "kwh_cycle", "utilisations_semaine", "mois_par_an"):
+        df[col] = df[col].astype(float)
+    return df[COLONNES].reset_index(drop=True)
+
+
+def kwh_par_utilisation(a) -> float:
+    """kWh d'une utilisation (un cycle, une séance) ; pour un appareil permanent, par jour."""
+    if a["usage"] == "permanent":
+        return a["puissance_w"] * 24 / 1000
+    if a["usage"] == "cycle" and a["kwh_cycle"] > 0:
+        return float(a["kwh_cycle"])
+    return a["puissance_w"] * a["duree_h"] / 1000
+
+
+def kwh_annuel(a) -> float:
+    saison = a["mois_par_an"] / 12
+    if a["usage"] == "permanent":
+        return a["puissance_w"] * 24 * 365 / 1000 * saison * a["quantite"]
+    return kwh_par_utilisation(a) * a["utilisations_semaine"] * 52 * saison * a["quantite"]
+
+
+def bilan_inventaire(appareils: pd.DataFrame) -> pd.DataFrame:
+    """Consommation annuelle théorique de chaque appareil, d'après vos réglages."""
+    df = normaliser(appareils)
+    df["kwh_utilisation"] = [kwh_par_utilisation(a) for _, a in df.iterrows()]
+    df["kwh_an"] = [kwh_annuel(a) for _, a in df.iterrows()]
+    return df
+
+
+def duree_typique(a) -> float:
+    """Durée d'une utilisation en heures (1 h si non renseignée)."""
+    if a["duree_h"] > 0:
+        return float(a["duree_h"])
+    return 1.0
 
 
 def meilleur_creneau(plages: list[Plage], duree_h: float) -> Plage | None:
@@ -27,22 +117,25 @@ def meilleur_creneau(plages: list[Plage], duree_h: float) -> Plage | None:
 
 
 def plan_appareils(appareils: pd.DataFrame, plages: list[Plage], prix_hp: float, prix_hc: float) -> pd.DataFrame:
-    """Heure de lancement conseillée et gain si chaque cycle passe de HP à HC."""
+    """Heure de lancement conseillée et gain si chaque utilisation passe de HP à HC
+    (appareils déplaçables uniquement)."""
     lignes = []
-    for _, a in appareils.dropna(subset=COLONNES).iterrows():
-        creneau = meilleur_creneau(plages, float(a["duree_h"]))
-        gain_cycle = float(a["kwh_cycle"]) * (prix_hp - prix_hc)
+    for _, a in normaliser(appareils).iterrows():
+        if not a["deplacable"] or a["usage"] == "permanent" or a["utilisations_semaine"] <= 0:
+            continue
+        creneau = meilleur_creneau(plages, duree_typique(a))
+        gain = kwh_par_utilisation(a) * (prix_hp - prix_hc)
         if creneau:
             conseil = f"Lancer à {creneau.debut:%H:%M} (fin avant {creneau.fin:%H:%M})"
         else:
-            conseil = "Cycle plus long que vos plages HC : le lancer au début de la plus longue"
+            conseil = "Plus long que vos plages HC : le lancer au début de la plus longue"
         lignes.append({
             "Appareil": a["nom"],
             "Conseil": conseil,
-            "Gain par cycle (€)": gain_cycle,
-            "Gain par an (€)": gain_cycle * float(a["cycles_semaine"]) * 52,
+            "Gain par utilisation (€)": gain,
+            "Gain par an (€)": gain * a["utilisations_semaine"] * 52 * a["mois_par_an"] / 12 * a["quantite"],
         })
-    return pd.DataFrame(lignes)
+    return pd.DataFrame(lignes, columns=["Appareil", "Conseil", "Gain par utilisation (€)", "Gain par an (€)"])
 
 
 def _echapper_ics(texte: str) -> str:

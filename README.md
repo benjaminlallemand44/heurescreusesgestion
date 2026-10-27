@@ -13,13 +13,29 @@ Application Streamlit pour suivre et optimiser sa consommation d'électricité a
   (ex. `00:56-06:56; 14:56-16:56`) : une demi-heure à cheval est répartie au prorata entre HP et HC
 - Historique daté des tarifs : chaque changement de prix s'applique à partir de sa date, les coûts passés restent justes
 
+**Mes appareils**
+- Inventaire complet au premier lancement (chauffage, ballon, cuisson, froid, lavage, éclairage, multimédia…),
+  avec des valeurs typiques à ajuster : puissance, durée, fréquence, saison, déplaçable ou non
+- Trois types d'usage : *cycle* (programme : lave-linge), *duree* (puissance × durée : plaques, radiateur),
+  *permanent* (réfrigérateur, box)
+- Consommation théorique annuelle par catégorie, comparée à la consommation mesurée
+
+**Journal et apprentissage**
+- Bouton « ▶ Je lance un appareil » en haut de chaque page (pratique sur téléphone), avec arrêt pour les
+  appareils sans durée fixe
+- Onglet « Ma journée » : courbe détaillée par demi-heure, annotation après coup (« de 19h à 20h : plaques »)
+- L'application mesure la consommation réelle de chaque utilisation annotée (excédent au-dessus du fond
+  de la journée), retient une valeur par appareil et repère les pics non annotés qui ressemblent à un
+  appareil connu (énergie et puissance) : il suffit de confirmer
+- Répartition estimée de chaque journée entre les appareils
+
 **Optimisation**
-- Talon de consommation (ce qui tourne en permanence) et son coût annuel
-- Profil de la journée type, coloré HP/HC
-- Détection des grosses consommations en heures pleines (ballon d'eau chaude mal programmé, lave-linge lancé en HP…) avec le gain possible
-- Simulateur d'offres : heures creuses, Base, et toute offre personnalisée (autre fournisseur, futures plages HC)
+- Conseils classés par gain annuel : décaler les appareils déplaçables en heures creuses (d'après vos
+  utilisations réelles), chauffage (-1 °C, programmation), ballon, veilles, consommation de fond inexpliquée,
+  appareils qui consomment plus que prévu
+- Talon, journée type, grosses consommations en heures pleines
+- Comparaison des offres EDF : Base, Heures creuses et Tempo (couleurs des jours estimées)
 - Seuil de rentabilité de l'option HC par rapport à Base
-- Mes appareils : l'application demande au premier lancement quels appareils vous avez, puis propose une heure de lancement et calcule le gain par cycle et par an
 - Rappels : fichier `.ics` à importer dans votre agenda pour être prévenu avant le début des heures creuses
 
 ## 🔌 Sources de données
@@ -44,8 +60,9 @@ Application Streamlit pour suivre et optimiser sa consommation d'électricité a
 ## 💾 Stockage des données
 
 - **Supabase** (recommandé, indispensable sur Streamlit Cloud) : si `SUPABASE_URL` et `SUPABASE_SECRET_KEY`
-  sont configurés, relevés, tarifs, appareils et réglages sont enregistrés dans le projet Supabase
-  « heures-creuses » (tables `releves`, `tarifs`, `appareils`, `reglages`).
+  sont configurés, relevés, tarifs, appareils, journal d'utilisation et réglages sont enregistrés dans le
+  projet Supabase « heures-creuses » (tables `releves`, `tarifs`, `appareils`, `utilisations`, `reglages` ;
+  schéma dans `supabase/migrations/`).
   Les tables sont protégées : aucune clé publique n'y a accès, seule la clé secrète de l'application.
 - **Fichiers locaux** sinon, dans le dossier `data/` (exclu de Git).
 
@@ -82,11 +99,14 @@ pytest
 
 ```
 app.py            Interface Streamlit
-hc/tarifs.py      Plages HC, grilles tarifaires datées, offres
+hc/tarifs.py      Plages HC, grilles tarifaires datées, offres, Tempo
 hc/calculs.py     Répartition HP/HC, coûts, talon, pics, simulateur, estimation de facture
 hc/releves.py     Relevés manuels des index
 hc/enedis.py      Conso API et import CSV
-hc/appareils.py   Catalogue d'appareils, conseils de lancement, rappels .ics
+hc/appareils.py   Inventaire et catalogue d'appareils, consommation théorique, rappels .ics
+hc/journal.py     Journal d'utilisation (bouton « Je lance », annotations)
+hc/apprentissage.py  Mesure de la consommation réelle des appareils, suggestions, répartition
+hc/optimisation.py   Conseils d'économies classés par gain
 hc/stockage.py    Sauvegarde : Supabase ou fichiers locaux (data/)
 hc/demo.py        Courbe de charge fictive
 ```

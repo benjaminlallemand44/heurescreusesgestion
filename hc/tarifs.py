@@ -128,3 +128,31 @@ def offres_depuis_grille(grille: Grille, plages: list[Plage]) -> list[Offre]:
         Offre("Heures creuses (actuelle)", grille.abonnement_hc_mensuel, grille.prix_hp, grille.prix_hc, plages),
         Offre("Base", grille.abonnement_base_mensuel, grille.prix_base),
     ]
+
+
+# --- Option Tempo (EDF) ------------------------------------------------------
+# Heures creuses fixes 22h-6h ; journée Tempo de 6h à 6h le lendemain.
+TEMPO_PLAGES_HC = [Plage(time(22, 0), time(6, 0))]
+
+
+@dataclass
+class TarifsTempo:
+    """Prix TTC indicatifs (6 kVA, février 2025) : à vérifier sur edf.fr."""
+
+    abonnement_mensuel: float = 15.50
+    bleu_hc: float = 0.1288
+    bleu_hp: float = 0.1552
+    blanc_hc: float = 0.1447
+    blanc_hp: float = 0.1792
+    rouge_hc: float = 0.1518
+    rouge_hp: float = 0.6586
+    jours_blancs: int = 43
+    jours_rouges: int = 22
+
+    def prix(self, couleur: str, periode: str) -> float:
+        return getattr(self, f"{couleur}_{periode.lower()}")
+
+    @classmethod
+    def depuis_dict(cls, d: dict | None) -> "TarifsTempo":
+        champs = cls.__dataclass_fields__
+        return cls(**{k: v for k, v in (d or {}).items() if k in champs})

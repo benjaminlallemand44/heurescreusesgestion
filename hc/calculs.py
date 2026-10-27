@@ -5,7 +5,7 @@ from datetime import date
 
 import pandas as pd
 
-from hc.tarifs import HistoriqueTarifs, Offre, Plage, est_heure_creuse
+from hc.tarifs import TEMPO_PLAGES_HC, HistoriqueTarifs, Offre, Plage, TarifsTempo, est_heure_creuse
 
 JOURS_PAR_MOIS = 365.25 / 12
 
@@ -217,3 +217,55 @@ def part_hc_rentable(abonnement_hc: float, prix_hp: float, prix_hc: float,
     if x > 1:
         return None
     return max(x, 0.0)
+
+
+def couleurs_tempo(jours: pd.DataFrame, tempo: TarifsTempo) -> pd.Series:
+    """Couleur supposée de chaque journée Tempo, faute de l'historique réel.
+
+    Hypothèse : les jours où vous consommez le plus sont les plus froids, donc
+    ceux qu'EDF classe rouge (lun.-ven., novembre à mars) puis blanc
+    (lun.-sam., octobre à mai). Le nombre de jours est proportionnel à la
+    période : 22 rouges et 43 blancs par saison complète.
+    `jours` : colonnes `jour_tempo` (date) et `kwh`.
+    """
+    d = pd.to_datetime(jours["jour_tempo"])
+    eligible_rouge = d.dt.month.isin([11, 12, 1, 2, 3]) & (d.dt.day_of_week < 5)
+    eligible_blanc = d.dt.month.isin([10, 11, 12, 1, 2, 3, 4, 5]) & (d.dt.day_of_week < 6)
+    # Jours éligibles sur une saison complète (environ) : 108 pour rouge, 207 pour blanc
+    n_rouge = round(eligible_rouge.sum() * tempo.jours_rouges / 108)
+    n_blanc = round(eligible_blanc.sum() * tempo.jours_blancs / 207)
+    couleurs = pd.Series("bleu", index=jours.index)
+    ordre = jours["kwh"].sort_values(ascending=False).index
+    for i in ordre:
+        if n_rouge > 0 and eligible_rouge[i]:
+            couleurs[i], n_rouge = "rouge", n_rouge - 1
+    for i in ordre:
+        if n_blanc > 0 and eligible_blanc[i] and couleurs[i] == "bleu":
+            couleurs[i], n_blanc = "blanc", n_blanc - 1
+    return couleurs
+
+
+def cout_tempo(energie: pd.DataFrame, tempo: TarifsTempo) -> dict:
+    """Coût estimé de l'option Tempo sur la période de la courbe."""
+    classe = classer_hp_hc(energie, TEMPO_PLAGES_HC)
+    classe["jour_tempo"] = (classe["debut"] - pd.Timedelta(hours=6)).dt.date
+    jours = classe.pivot_table(index="jour_tempo", columns="periode", values="kwh", aggfunc="sum", fill_value=0.0)
+    for col in ("HP", "HC"):
+        if col not in jours:
+            jours[col] = 0.0
+    jours = jours.reset_index()
+    jours["kwh"] = jours["HP"] + jours["HC"]
+    jours["couleur"] = couleurs_tempo(jours, tempo)
+    energie_cout = sum(
+        r.HP * tempo.prix(r.couleur, "hp") + r.HC * tempo.prix(r.couleur, "hc") for r in jours.itertuples()
+    )
+    nb_jours = (energie["fin"].max() - energie["debut"].min()).total_seconds() / 86400
+    abonnement = tempo.abonnement_mensuel * nb_jours / JOURS_PAR_MOIS
+    total = abonnement + energie_cout
+    return {
+        "offre": "Tempo",
+        "kwh_hp": float(jours["HP"].sum()), "kwh_hc": float(jours["HC"].sum()),
+        "abonnement": abonnement, "energie": energie_cout, "total": total,
+        "total_annuel": total * 365 / nb_jours if nb_jours else 0.0,
+        "jours_couleurs": jours["couleur"].value_counts().to_dict(),
+    }
