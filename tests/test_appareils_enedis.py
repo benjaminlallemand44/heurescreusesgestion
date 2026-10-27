@@ -67,9 +67,10 @@ class FausseSession:
 
 def test_recuperer_courbe_plusieurs_requetes():
     session = FausseSession()
-    df = enedis.recuperer_courbe("12345678901234", "secret", date(2026, 10, 1), date(2026, 10, 10), session)
+    df, erreurs = enedis.recuperer_courbe("12345678901234", "secret", date(2026, 10, 1), date(2026, 10, 10), session)
     assert len(session.appels) == 2
     assert len(df) == 2
+    assert erreurs == []
 
 
 def test_lire_csv(tmp_path):
@@ -101,3 +102,17 @@ def test_erreur_conso_api_affiche_le_message():
 @pytest.mark.parametrize("brut", ["abc", " abc\n", '"abc"', "Bearer abc", "  bearer abc "])
 def test_nettoyer_token(brut):
     assert enedis.nettoyer_token(brut) == "abc"
+
+
+class SessionPremiereTrancheRefusee(FausseSession):
+    def get(self, url, params, headers, timeout):
+        if params["start"] == "2026-10-11":
+            return SessionErreur().get(url, params, headers, timeout)
+        return super().get(url, params, headers, timeout)
+
+
+def test_tranche_refusee_n_empeche_pas_les_suivantes():
+    session = SessionPremiereTrancheRefusee()
+    df, erreurs = enedis.recuperer_courbe("12345678901234", "secret", date(2026, 10, 11), date(2026, 10, 26), session)
+    assert len(df) == 2  # tranches du 18 et du 25
+    assert len(erreurs) == 1 and "du 11/10 au 18/10" in erreurs[0] and "Aucune donnée" in erreurs[0]

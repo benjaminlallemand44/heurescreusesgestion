@@ -59,11 +59,17 @@ def _message_erreur(rep) -> str:
     return str(corps)
 
 
-def recuperer_courbe(prm: str, token: str, debut: date, fin: date, session=None) -> pd.DataFrame:
-    """Courbe de charge de `debut` (inclus) à `fin` (exclu)."""
+def recuperer_courbe(prm: str, token: str, debut: date, fin: date, session=None) -> tuple[pd.DataFrame, list[str]]:
+    """Courbe de charge de `debut` (inclus) à `fin` (exclu).
+
+    Chaque tranche de 7 jours est demandée séparément : une tranche refusée
+    (souvent antérieure à l'activation de la collecte) n'empêche pas
+    d'afficher les autres. Retourne la courbe et la liste des erreurs ;
+    lève ErreurConsoAPI si aucune tranche n'a abouti.
+    """
     session = session or requests.Session()
     entetes = {"Authorization": f"Bearer {nettoyer_token(token)}", "User-Agent": USER_AGENT}
-    morceaux = []
+    morceaux, erreurs = [], []
     for d, f in decouper_periode(debut, fin):
         rep = session.get(
             f"{URL_BASE}/consumption_load_curve",
@@ -71,12 +77,16 @@ def recuperer_courbe(prm: str, token: str, debut: date, fin: date, session=None)
             headers=entetes,
             timeout=30,
         )
-        if not rep.ok:
-            raise ErreurConsoAPI(f"{rep.status_code} — {_message_erreur(rep)} (du {d:%d/%m} au {f:%d/%m})")
-        morceaux.append(parse_courbe(rep.json()))
+        if rep.ok:
+            morceaux.append(parse_courbe(rep.json()))
+        else:
+            erreurs.append(f"du {d:%d/%m} au {f:%d/%m} : {rep.status_code} — {_message_erreur(rep)}")
+    if erreurs and not morceaux:
+        raise ErreurConsoAPI(" ; ".join(erreurs))
     if not morceaux:
-        return pd.DataFrame(columns=["date", "puissance_w"])
-    return pd.concat(morceaux).drop_duplicates("date").sort_values("date").reset_index(drop=True)
+        return pd.DataFrame(columns=["date", "puissance_w"]), erreurs
+    courbe = pd.concat(morceaux).drop_duplicates("date").sort_values("date").reset_index(drop=True)
+    return courbe, erreurs
 
 
 def lire_csv(fichier) -> pd.DataFrame:

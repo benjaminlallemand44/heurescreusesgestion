@@ -46,8 +46,8 @@ def lire_token() -> str:
     return lire_secrets().get("CONSO_API_TOKEN") or os.environ.get("CONSO_API_TOKEN", "")
 
 
-@st.cache_data(ttl=6 * 3600, show_spinner="Récupération des données Enedis…")
-def courbe_api(prm: str, token: str, debut: date, fin: date) -> pd.DataFrame:
+@st.cache_data(ttl=3600, show_spinner="Récupération des données Enedis…")
+def courbe_api(prm: str, token: str, debut: date, fin: date) -> tuple[pd.DataFrame, list[str]]:
     return enedis.recuperer_courbe(prm, token, debut, fin)
 
 
@@ -98,7 +98,7 @@ with st.sidebar:
         token = lire_token()
         prm = st.text_input("PRM (14 chiffres)", reglages["prm"])
         hier = date.today() - timedelta(days=1)
-        periode = st.date_input("Période", (hier - timedelta(days=14), hier), max_value=hier)
+        periode = st.date_input("Période", (hier - timedelta(days=6), hier), max_value=hier)
         if not token:
             st.warning(
                 "Token Conso API absent.\n\n"
@@ -111,10 +111,16 @@ with st.sidebar:
             st.warning("Le PRM doit comporter 14 chiffres.")
         elif isinstance(periode, tuple) and len(periode) == 2:
             try:
-                courbe = courbe_api(prm, token, periode[0], periode[1] + timedelta(days=1))
+                courbe, erreurs_api = courbe_api(prm, token, periode[0], periode[1] + timedelta(days=1))
+                if erreurs_api:
+                    st.warning("Certaines périodes n'ont pas pu être récupérées (souvent : antérieures "
+                               "à l'activation de la collecte) :\n\n- " + "\n- ".join(erreurs_api))
+                if courbe.empty:
+                    st.info("Aucune donnée sur cette période pour l'instant.")
             except Exception as exc:  # erreurs réseau ou HTTP renvoyées par l'API
                 st.error(f"Erreur Conso API : {exc}")
-                st.caption("Causes fréquentes : collecte horaire pas encore activée sur Enedis, "
+                st.caption("Causes fréquentes : période antérieure à l'activation de la collecte "
+                           "(essayez seulement les derniers jours), collecte horaire pas encore activée, "
                            "token mal copié ou expiré, PRM différent de celui autorisé, "
                            "ou dates trop récentes (données disponibles à J+1).")
 
