@@ -146,3 +146,14 @@ def test_pas_de_suggestion_sans_ressemblance():
     e = courbe(jours=1, ajouts=[("2026-10-20 10:00", "2026-10-20 10:30", 5000)])
     sugg = apprentissage.suggestions(e, jr.vide(), INVENTAIRE, apprentissage.apprendre(pd.DataFrame(), INVENTAIRE))
     assert len(sugg) == 1 and sugg.iloc[0]["appareil"] is None
+
+
+def test_journee_sans_pic():
+    e = courbe(jours=1)  # consommation de fond uniquement
+    vide = apprentissage.apprendre(pd.DataFrame(), INVENTAIRE)
+    assert apprentissage.pics_non_annotes(e, jr.vide(), INVENTAIRE).empty
+    assert apprentissage.suggestions(e, jr.vide(), INVENTAIRE, vide).empty
+    # tous les pics déjà annotés : rien à proposer non plus
+    e = courbe(jours=1, ajouts=[("2026-10-20 19:00", "2026-10-20 21:00", 450)])
+    j = journal(("Lave-linge", "2026-10-20 19:00", "2026-10-20 21:00"))
+    assert apprentissage.suggestions(e, j, INVENTAIRE, vide).empty

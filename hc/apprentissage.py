@@ -166,6 +166,8 @@ def pics_non_annotes(energie: pd.DataFrame, journal: pd.DataFrame, appareils: pd
                 pics.append(courant)
         else:
             courant = None
+    if not pics:
+        return pd.DataFrame(columns=colonnes)
     df = pd.DataFrame(pics, columns=["debut", "fin", "kwh"])
     df["puissance_w"] = df["kwh"] * 3.6e6 / (df["fin"] - df["debut"]).dt.total_seconds()
     return df[colonnes]
