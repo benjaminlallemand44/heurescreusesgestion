@@ -90,14 +90,6 @@ def test_recuperer_courbe_plusieurs_requetes():
     assert erreurs == []
 
 
-def test_lire_csv(tmp_path):
-    f = tmp_path / "courbe.csv"
-    f.write_text("date;valeur\n2026-10-20 00:30;420\n2026-10-20 01:00;1850\n")
-    df = enedis.lire_csv(f)
-    assert list(df.columns) == ["date", "puissance_w"]
-    assert df["puissance_w"].sum() == 2270
-
-
 class SessionErreur:
     def get(self, url, params, headers, timeout):
         class Rep:

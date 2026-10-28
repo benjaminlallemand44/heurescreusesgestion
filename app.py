@@ -11,7 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from hc import apprentissage, appareils, calculs, enedis, optimisation, releves, stockage
+from hc import apprentissage, appareils, calculs, enedis, export_enedis, optimisation, releves, stockage
 from hc import journal as jr
 from hc.demo import courbe_demo
 from hc.tarifs import (
@@ -25,7 +25,7 @@ COULEURS = {"HC": "#2a9d8f", "HP": "#e76f51"}
 
 SOURCE_DEMO = "Démo (données fictives)"
 SOURCE_RELEVES = "Relevés manuels"
-SOURCE_CSV = "Fichier CSV (courbe de charge)"
+SOURCE_FICHIER = "Fichier exporté d'Enedis (.xlsx)"
 SOURCE_API = "Enedis via Conso API"
 # Jours de courbe récupérés pour apprendre à partir du journal d'utilisation
 JOURS_APPRENTISSAGE = 60
@@ -137,7 +137,7 @@ with st.sidebar:
     st.caption(f"💾 Données enregistrées dans : {store.nom}")
     st.header("Source des données")
     # Avec un token configuré, on ouvre directement sur les données Enedis
-    source = st.radio("Source", [SOURCE_DEMO, SOURCE_RELEVES, SOURCE_CSV, SOURCE_API],
+    source = st.radio("Source", [SOURCE_DEMO, SOURCE_RELEVES, SOURCE_FICHIER, SOURCE_API],
                       index=3 if token else 0, label_visibility="collapsed")
 
     courbe = None
@@ -147,13 +147,18 @@ with st.sidebar:
         courbe = courbe_demo(nb_jours, fin=pd.Timestamp(aujourd_hui))
         st.info("Courbe fictive d'un appartement, pour découvrir l'application. "
                 "L'apprentissage des appareils n'utilise que vos vraies données.")
-    elif source == SOURCE_CSV:
-        fichier = st.file_uploader("CSV : date ; puissance (W)", type=["csv", "txt"])
+    elif source == SOURCE_FICHIER:
+        st.caption("Sur enedis.fr → Mon espace → votre consommation, affichez la consommation **horaire** "
+                   "(par demi-heure), puis téléchargez-la. Déposez ici le fichier obtenu.")
+        fichier = st.file_uploader("Fichier Enedis", type=["xlsx", "xls", "csv"], label_visibility="collapsed")
         if fichier:
             try:
-                courbe = courbe_apprentissage = enedis.lire_csv(fichier)
+                courbe = courbe_apprentissage = export_enedis.lire_export(fichier, fichier.name)
             except (ValueError, KeyError) as exc:
                 st.error(f"Lecture impossible : {exc}")
+            else:
+                st.success(f"{len(courbe)} mesures, du {courbe['date'].min():%d/%m/%Y} "
+                           f"au {courbe['date'].max():%d/%m/%Y}.")
     elif source == SOURCE_API:
         if prm:
             st.caption(f"PRM : {prm}" + (" (lu dans votre token)" if prm in prms_token else ""))
@@ -573,7 +578,7 @@ with onglets[3]:
         else:
             res_tempo = None
             resultats = calculs.comparer_offres_kwh(bilan["kwh_hp"].sum(), bilan["kwh_hc"].sum(), len(bilan), offres)
-            st.caption("Tempo ne peut être simulé qu'avec la courbe de charge (Enedis, CSV ou démo).")
+            st.caption("Tempo ne peut être simulé qu'avec la courbe de charge (Enedis, fichier exporté ou démo).")
         res = pd.DataFrame(resultats).sort_values("total_annuel")
         fig = px.bar(res, x="total_annuel", y="offre", orientation="h", text=res["total_annuel"].map(euros))
         fig.update_layout(xaxis_title="Coût annuel estimé (€)", yaxis_title="",

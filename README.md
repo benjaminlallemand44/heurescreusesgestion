@@ -44,7 +44,7 @@ Application Streamlit pour suivre et optimiser sa consommation d'électricité a
 |---|---|
 | Démo | Rien : données fictives pour découvrir l'application |
 | Relevés manuels | Relever les index HC et HP du Linky (bouton « + ») et les saisir dans l'onglet Relevés |
-| Fichier CSV | Un fichier `date;puissance_w` (courbe de charge, pas de 30 min) |
+| Fichier exporté d'Enedis | Le fichier .xlsx (ou .csv) de la consommation horaire, téléchargé depuis l'espace client Enedis |
 | Enedis via Conso API | Collecte horaire activée sur l'espace Enedis + token Conso API (voir ci-dessous) |
 
 ### Configurer Conso API
@@ -102,7 +102,8 @@ app.py            Interface Streamlit
 hc/tarifs.py      Plages HC, grilles tarifaires datées, offres, Tempo
 hc/calculs.py     Répartition HP/HC, coûts, talon, pics, simulateur, estimation de facture
 hc/releves.py     Relevés manuels des index
-hc/enedis.py      Conso API et import CSV
+hc/enedis.py      Conso API
+hc/export_enedis.py  Lecture du fichier exporté depuis l'espace Enedis (.xlsx/.csv)
 hc/appareils.py   Inventaire et catalogue d'appareils, consommation théorique, rappels .ics
 hc/journal.py     Journal d'utilisation (bouton « Je lance », annotations)
 hc/apprentissage.py  Mesure de la consommation réelle des appareils, suggestions, répartition

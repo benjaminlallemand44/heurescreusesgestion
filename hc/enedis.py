@@ -153,16 +153,3 @@ def recuperer_courbe(prm: str, token: str, debut: date, fin: date, session=None)
         return pd.DataFrame(columns=["date", "puissance_w"]), erreurs
     courbe = pd.concat(morceaux).drop_duplicates("date").sort_values("date").reset_index(drop=True)
     return courbe, erreurs
-
-
-def lire_csv(fichier) -> pd.DataFrame:
-    """Lit un CSV `date;puissance_w` (ou `date,valeur`) exporté ou préparé à la main."""
-    df = pd.read_csv(fichier, sep=None, engine="python")
-    if len(df.columns) < 2:
-        raise ValueError("Le fichier doit contenir au moins deux colonnes : date et puissance (W).")
-    df = df.iloc[:, :2]
-    df.columns = ["date", "puissance_w"]
-    return pd.DataFrame({
-        "date": pd.to_datetime(df["date"]),
-        "puissance_w": pd.to_numeric(df["puissance_w"]),
-    })
