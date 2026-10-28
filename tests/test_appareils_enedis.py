@@ -160,3 +160,10 @@ def test_message_erreur_inclut_les_details_enedis():
     message = enedis._message_erreur(Rep())
     assert message.startswith("The Enedis API returned an error")
     assert "ADAM-ERR0123" in message and "no measure" in message
+
+
+def test_explication_erreur_titulaire():
+    message = ('du 26/10 au 29/10 : 400 — The Enedis API returned an error {"error": {"error": "ADAM-DC-0007", '
+               '"error_description": "Le client n\'est pas titulaire du point demandé."}}')
+    assert "titulaire" in enedis.explication_erreur(message)
+    assert enedis.explication_erreur("erreur inconnue") is None

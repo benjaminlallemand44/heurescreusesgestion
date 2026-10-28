@@ -85,6 +85,31 @@ def prms_du_token(token: str) -> list[str]:
     return trouves
 
 
+# Codes d'erreur Enedis fréquents, expliqués
+EXPLICATIONS = {
+    "ADAM-DC-0007": (
+        "Enedis ne reconnaît pas le compte qui a donné l'autorisation sur conso.boris.sh comme titulaire du "
+        "contrat de ce compteur. Vérifiez que le nom et le prénom de votre compte Enedis correspondent "
+        "exactement au titulaire du contrat sur votre facture EDF (orthographe, accents, nom d'usage). Si le "
+        "contrat est au nom d'une autre personne, c'est elle qui doit donner l'autorisation. Après un "
+        "emménagement ou un changement de contrat récent, la mise à jour chez Enedis peut prendre quelques "
+        "jours : refaites ensuite l'autorisation sur conso.boris.sh pour obtenir un nouveau token."
+    ),
+    "ADAM-ERR0123": (
+        "Enedis n'a pas encore de mesures pour cette période. Juste après l'activation de la collecte, il "
+        "faut en général attendre 1 à 3 jours que la première journée complète soit disponible."
+    ),
+}
+
+
+def explication_erreur(message: str) -> str | None:
+    """Explication en clair d'une erreur Enedis connue, d'après son code."""
+    for code, explication in EXPLICATIONS.items():
+        if code in message:
+            return explication
+    return None
+
+
 def _message_erreur(rep) -> str:
     try:
         corps = rep.json()

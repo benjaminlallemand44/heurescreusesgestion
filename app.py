@@ -184,7 +184,9 @@ with st.sidebar:
                     st.info("Aucune donnée sur cette période pour l'instant.")
             except Exception as exc:  # erreurs réseau ou HTTP renvoyées par l'API
                 st.error(f"Erreur Conso API : {exc}")
-                if "Enedis API returned an error" in str(exc):
+                if explication := enedis.explication_erreur(str(exc)):
+                    st.info(explication)
+                elif "Enedis API returned an error" in str(exc):
                     st.info("Votre token et votre PRM sont acceptés : c'est Enedis qui n'a pas encore de données. "
                             "Juste après l'activation de la collecte, il faut en général attendre 1 à 3 jours "
                             "que la première journée complète soit disponible. En attendant, utilisez les "
