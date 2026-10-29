@@ -76,3 +76,33 @@ def test_fichier_journalier_refuse(tmp_path):
 def test_fichier_sans_tableau(tmp_path):
     with pytest.raises(ValueError, match="introuvable"):
         lire_export(xlsx(tmp_path, [["Bonjour"], ["rien ici"]]), "export.xlsx")
+
+
+def test_format_espace_enedis_debut_fin_kw(tmp_path):
+    """Format réel de l'export horaire de l'espace client Enedis."""
+    lignes = [["Début", "Fin", "Valeur (en kW)"],
+              ["24/10/2026 23:00:00", "25/10/2026 00:00:00", "0,06"],
+              ["25/10/2026 00:00:00", "25/10/2026 01:00:00", "0,08"],
+              ["25/10/2026 01:00:00", "25/10/2026 02:00:00", "0,70"],
+              # passage à l'heure d'hiver : la même heure apparaît deux fois
+              ["25/10/2026 01:00:00", "25/10/2026 02:00:00", "1,67"],
+              ["25/10/2026 02:00:00", "25/10/2026 03:00:00", "0,80"]]
+    df = lire_export(xlsx(tmp_path, lignes), "export.xlsx")
+    # repère = fin d'intervalle, puissance en W
+    assert list(df["date"]) == [pd.Timestamp(f"2026-10-25 0{h}:00") for h in range(4)]
+    assert list(df["puissance_w"]) == pytest.approx([60, 80, 2370, 800])
+
+
+def test_format_espace_enedis_dates_excel(tmp_path):
+    lignes = [["Début", "Fin", "Valeur (en kW)"],
+              [datetime(2026, 10, 19, 0), datetime(2026, 10, 19, 1), 0.07],
+              [datetime(2026, 10, 19, 1), datetime(2026, 10, 19, 2), 0.49]]
+    df = lire_export(xlsx(tmp_path, lignes), "export.xlsx")
+    assert list(df["date"]) == [pd.Timestamp("2026-10-19 01:00"), pd.Timestamp("2026-10-19 02:00")]
+    assert list(df["puissance_w"]) == pytest.approx([70, 490])
+
+
+def test_colonne_debut_seule_decalee_d_un_pas(tmp_path):
+    lignes = [["Début", "Valeur (en W)"], ["19/10/2026 00:00", 100], ["19/10/2026 00:30", 200]]
+    df = lire_export(xlsx(tmp_path, lignes), "export.xlsx")
+    assert df["date"].iloc[0] == pd.Timestamp("2026-10-19 00:30")

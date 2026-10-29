@@ -7,6 +7,7 @@ Valeur ». On cherche donc ce tableau plutôt que de supposer sa position.
 
 import csv
 import io
+import re
 import unicodedata
 from pathlib import Path
 
@@ -39,8 +40,8 @@ def _feuilles(fichier, nom: str) -> list[pd.DataFrame]:
     return [pd.DataFrame([l + [None] * (largeur - len(l)) for l in lignes], dtype=object)]
 
 
-def _ligne_entete(df: pd.DataFrame) -> tuple[int, int, int] | None:
-    """(ligne, colonne date, colonne valeur) du tableau des mesures.
+def _ligne_entete(df: pd.DataFrame) -> tuple[int, int, int, int | None] | None:
+    """(ligne, colonne date, colonne valeur, colonne « Fin » éventuelle) du tableau des mesures.
 
     « Horodate » d'abord : les lignes d'informations du haut du fichier
     contiennent aussi des « Date de début »."""
@@ -51,8 +52,16 @@ def _ligne_entete(df: pd.DataFrame) -> tuple[int, int, int] | None:
             col_val = next((j for mot in MOTS_VALEUR for j, v in cellules.items()
                             if j != col_date and v.startswith(mot)), None)
             if col_date is not None and col_val is not None:
-                return i, col_date, col_val
+                col_fin = next((j for j, v in cellules.items()
+                                if j not in (col_date, col_val) and (v == "fin" or v.startswith("date de fin"))), None)
+                return i, col_date, col_val, col_fin
     return None
+
+
+def _unite_entete(entete) -> str:
+    """Unité écrite dans l'en-tête de la colonne, ex. « Valeur (en kW) »."""
+    trouve = re.search(r"\(\s*(?:en\s+)?([a-z]+)\s*\)", _normaliser(entete))
+    return trouve.group(1) if trouve and trouve.group(1) in UNITES else ""
 
 
 def _unite(df: pd.DataFrame, jusqua: int) -> str:
@@ -98,8 +107,12 @@ def lire_export(fichier, nom: str) -> pd.DataFrame:
         entete = _ligne_entete(df)
         if entete is None:
             continue
-        i, col_date, col_val = entete
-        donnees = df.iloc[i + 1:, [col_date, col_val]].dropna()
+        i, col_date, col_val, col_fin = entete
+        # La courbe est repérée par la fin de chaque intervalle (convention Enedis) :
+        # on prend la colonne « Fin » si elle existe, sinon « Début » + pas.
+        col_reference = col_fin if col_fin is not None else col_date
+        debut_seul = col_fin is None and _normaliser(df.iat[i, col_date]).startswith(("debut", "date de debut"))
+        donnees = df.iloc[i + 1:, [col_reference, col_val]].dropna()
         donnees.columns = ["date", "valeur"]
         valeurs = _nombres(donnees["valeur"])
         donnees = donnees[valeurs.notna()]
@@ -107,7 +120,9 @@ def lire_export(fichier, nom: str) -> pd.DataFrame:
         if donnees.empty:
             continue
         courbe = pd.DataFrame({"date": _dates(donnees["date"]).values, "valeur": valeurs.values})
-        courbe = courbe.drop_duplicates("date").sort_values("date").reset_index(drop=True)
+        # Passage à l'heure d'hiver : une heure apparaît deux fois avec la même étiquette.
+        # On cumule les deux pour ne pas perdre d'énergie (la puissance de cette heure-là est doublée).
+        courbe = courbe.groupby("date", as_index=False)["valeur"].sum()
         pas = courbe["date"].diff().median()
         if pd.isna(pas):
             raise ValueError("Le fichier ne contient qu'une seule mesure.")
@@ -115,7 +130,9 @@ def lire_export(fichier, nom: str) -> pd.DataFrame:
             raise ValueError(
                 "Ce fichier contient une consommation par jour. Sur l'espace Enedis, téléchargez plutôt la "
                 "consommation horaire (courbe de charge, par demi-heure).")
-        unite = _unite(df, i)
+        if debut_seul:
+            courbe["date"] = courbe["date"] + pas
+        unite = _unite_entete(df.iat[i, col_val]) or _unite(df, i)
         heures = pas.total_seconds() / 3600
         if unite in ("kwh",):
             puissance = courbe["valeur"] * 1000 / heures

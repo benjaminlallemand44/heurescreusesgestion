@@ -157,3 +157,16 @@ def test_journee_sans_pic():
     e = courbe(jours=1, ajouts=[("2026-10-20 19:00", "2026-10-20 21:00", 450)])
     j = journal(("Lave-linge", "2026-10-20 19:00", "2026-10-20 21:00"))
     assert apprentissage.suggestions(e, j, INVENTAIRE, vide).empty
+
+
+def test_rechauffe_du_ballon_au_debut_des_heures_creuses():
+    # Courbe horaire comme l'export Enedis : petites rechauffes de ~0,5-0,7 kWh vers 1 h et 15 h
+    dates = pd.date_range("2026-10-21 01:00", periods=24, freq="h")
+    p = [490 if d.hour == 2 else 670 if d.hour == 16 else 20 for d in dates]
+    e = calculs.energie_par_intervalle(pd.DataFrame({"date": dates, "puissance_w": p}))
+    vide = apprentissage.apprendre(pd.DataFrame(), INVENTAIRE)
+    sugg = apprentissage.suggestions(e, jr.vide(), INVENTAIRE, vide, plages=PLAGES)
+    assert list(sugg["appareil"]) == ["Ballon d'eau chaude", "Ballon d'eau chaude"]
+    assert set(sugg["d_apres"]) == {"le début des heures creuses"}
+    # sans les plages, pas d'indice horaire
+    assert "Ballon d'eau chaude" not in list(apprentissage.suggestions(e, jr.vide(), INVENTAIRE, vide)["appareil"])

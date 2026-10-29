@@ -351,7 +351,7 @@ with onglets[1]:
 
         if e_jour is not None and not e_jour.empty and source != SOURCE_DEMO:
             sugg = apprentissage.suggestions(e_jour, journal_df, inventaire, appris,
-                                             seuil_w=reglages.get("seuil_suggestion_w", 400))
+                                             seuil_w=reglages.get("seuil_suggestion_w", 400), plages=plages)
             if not sugg.empty:
                 st.markdown("**Consommations non expliquées** — aidez l'application à apprendre :")
                 for i, s_ in sugg.iterrows():

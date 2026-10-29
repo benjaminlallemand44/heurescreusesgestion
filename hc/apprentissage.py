@@ -14,6 +14,7 @@ import pandas as pd
 
 from hc import appareils as app
 from hc import journal as jr
+from hc.tarifs import Plage
 
 QUANTILE_FOND = 0.2
 COUVERTURE_MIN = 0.8  # part de l'utilisation couverte par des données de courbe
@@ -173,11 +174,24 @@ def pics_non_annotes(energie: pd.DataFrame, journal: pd.DataFrame, appareils: pd
     return df[colonnes]
 
 
+def _au_debut_des_heures_creuses(debut: pd.Timestamp, plages: list[Plage]) -> bool:
+    """Vrai si un pic démarre dans l'heure qui suit (ou précède) le début d'une plage creuse."""
+    for p in plages:
+        for jour in (debut.normalize() - pd.Timedelta(days=1), debut.normalize()):
+            ouverture = jour + pd.Timedelta(hours=p.debut.hour, minutes=p.debut.minute)
+            if abs((debut - ouverture).total_seconds()) < 3600:
+                return True
+    return False
+
+
 def suggestions(energie: pd.DataFrame, journal: pd.DataFrame, appareils: pd.DataFrame,
-                appris: pd.DataFrame, seuil_w: float = 400, a_l_instant=None) -> pd.DataFrame:
+                appris: pd.DataFrame, seuil_w: float = 400, a_l_instant=None,
+                plages: list[Plage] | None = None) -> pd.DataFrame:
     """Pour chaque pic non annoté, l'appareil qui lui ressemble le plus.
 
-    On compare l'énergie et la puissance moyenne du pic à celles d'une
+    Un pic qui démarre au début d'une plage creuse est attribué au ballon
+    d'eau chaude (commandé par le contact heures creuses du compteur). Sinon,
+    on compare l'énergie et la puissance moyenne du pic à celles d'une
     utilisation de chaque appareil : valeurs apprises si elles existent,
     sinon valeurs de vos réglages.
     """
@@ -193,8 +207,12 @@ def suggestions(energie: pd.DataFrame, journal: pd.DataFrame, appareils: pd.Data
     for _, a in appris.iterrows():
         if a["n"] >= 2 and a["kwh_appris"] > 0:
             references[a["appareil"]] = (a["kwh_appris"], a["puissance_apprise_w"], "l'apprentissage")
+    ballons = inv.loc[inv["categorie"] == "Eau chaude", "nom"].tolist()
     lignes = []
     for _, p in pics.iterrows():
+        if plages and ballons and _au_debut_des_heures_creuses(p["debut"], plages):
+            lignes.append({**p.to_dict(), "appareil": ballons[0], "d_apres": "le début des heures creuses"})
+            continue
         meilleur, score_min, source = None, float("inf"), ""
         for nom, (kwh_ref, w_ref, d_apres) in references.items():
             ecart_kwh = abs(p["kwh"] - kwh_ref) / kwh_ref
