@@ -162,6 +162,8 @@ with st.sidebar:
     elif source == SOURCE_API:
         if prm:
             st.caption(f"PRM : {prm}" + (" (lu dans votre token)" if prm in prms_token else ""))
+        if token and (cree := enedis.date_creation_token(token)):
+            st.caption(f"Token utilisé : créé le {cree:%d/%m/%Y à %H:%M}")
         else:
             saisi = st.text_input("PRM (14 chiffres)", help="Enregistré automatiquement dès qu'il est complet.")
             if len(saisi.strip()) == 14 and saisi.strip().isdigit():

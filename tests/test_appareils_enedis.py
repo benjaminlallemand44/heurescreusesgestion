@@ -159,3 +159,11 @@ def test_explication_erreur_titulaire():
                '"error_description": "Le client n\'est pas titulaire du point demandé."}}')
     assert "titulaire" in enedis.explication_erreur(message)
     assert enedis.explication_erreur("erreur inconnue") is None
+
+
+def test_date_creation_token():
+    from datetime import datetime
+    # 1er novembre 2026 12:00 UTC = 13:00 à Paris
+    assert enedis.date_creation_token(jwt({"sub": ["1"], "iat": 1793534400})) == datetime(2026, 11, 1, 13, 0)
+    assert enedis.date_creation_token(jwt({"sub": ["1"]})) is None
+    assert enedis.date_creation_token("pas-un-jwt") is None

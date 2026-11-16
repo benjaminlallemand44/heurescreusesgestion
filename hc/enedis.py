@@ -8,7 +8,8 @@ d'environnement CONSO_API_TOKEN, jamais dans le code.
 import base64
 import json
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -52,19 +53,35 @@ def nettoyer_token(token: str) -> str:
     return token
 
 
+def _contenu_token(token: str):
+    """Contenu lisible du token (un JWT), sans vérification de signature ; None si illisible."""
+    morceaux = nettoyer_token(token).split(".")
+    if len(morceaux) != 3:
+        return None
+    try:
+        return json.loads(base64.urlsafe_b64decode(morceaux[1] + "=" * (-len(morceaux[1]) % 4)))
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
+def date_creation_token(token: str) -> datetime | None:
+    """Date de création du token (champ « iat »), en heure française : permet de
+    vérifier que l'application utilise bien le dernier token, sans l'afficher."""
+    donnees = _contenu_token(token)
+    iat = donnees.get("iat") if isinstance(donnees, dict) else None
+    if not isinstance(iat, (int, float)):
+        return None
+    return datetime.fromtimestamp(iat, ZoneInfo("Europe/Paris")).replace(tzinfo=None)
+
+
 def prms_du_token(token: str) -> list[str]:
     """PRM autorisés lus dans le token (un JWT dont le contenu liste les PRM).
 
     Lecture seule, sans vérification de signature : sert uniquement à éviter
     de demander le PRM. Retourne une liste vide si le token n'est pas lisible.
     """
-    morceaux = nettoyer_token(token).split(".")
-    if len(morceaux) != 3:
-        return []
-    try:
-        contenu = morceaux[1] + "=" * (-len(morceaux[1]) % 4)
-        donnees = json.loads(base64.urlsafe_b64decode(contenu))
-    except (ValueError, UnicodeDecodeError):
+    donnees = _contenu_token(token)
+    if donnees is None:
         return []
     trouves = []
 
@@ -93,7 +110,10 @@ EXPLICATIONS = {
         "exactement au titulaire du contrat sur votre facture EDF (orthographe, accents, nom d'usage). Si le "
         "contrat est au nom d'une autre personne, c'est elle qui doit donner l'autorisation. Après un "
         "emménagement ou un changement de contrat récent, la mise à jour chez Enedis peut prendre quelques "
-        "jours : refaites ensuite l'autorisation sur conso.boris.sh pour obtenir un nouveau token."
+        "jours : refaites ensuite l'autorisation sur conso.boris.sh pour obtenir un nouveau token. Si l'erreur "
+        "persiste avec un token récent (date affichée dans le menu de gauche), contactez EDF pour vérifier que "
+        "le contrat est enregistré à votre nom exact et transmis à Enedis. En attendant, importez le fichier "
+        "exporté depuis votre espace Enedis."
     ),
     "ADAM-ERR0123": (
         "Enedis n'a pas encore de mesures pour cette période. Juste après l'activation de la collecte, il "
